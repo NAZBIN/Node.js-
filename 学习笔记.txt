@@ -1,0 +1,195 @@
+Node.js高性能：事件循环和非阻塞I/O.
+
+Common Js规范。
+
+`一个初始模块，被别的对象引用时，模式是一个空对象
+`定义一个模块输出模式: 使用exports
+`每一个模块都是一个作用域
+`对于每一个require会先去查找缓存，如果没有命中会创建一个module对象
+      ->每一个module都有exports对象
+      ->通过call来调用模块
+`require本质上导入的是module.exports，当exports也有内容的时候，由于此时module.exports和exports指向的
+    不是同一块地址，exports会失效。
+`在A文件中对B文件的修改，当C文件引用B时可以引用被修改后的内容，so 模块可以当做一个全局的存储对象来用。
+`通过把一些逻辑代码封装到一个模块里，以后需要再次用这段逻辑的时候，直接引入模块就可以。
+
+
+Npm:包管理工具，别人写的Node.js模块
+`npm当上传到代码仓库,可以忽略node_module只上传package.json，这样当pull一个项目的时候可以直接通过
+    npm install 下载当前项目所需要的包。(package.json中的dependencies用来声明依赖)
+
+内置模块:提供操作系统与Node.js的交互能力
+`Node.js源码。node.js内置模块都在lib里面  
+`内置模块的整个调用通路:node.js应用代码->Node.js内置模块->调用node.js里的c++模块->得到结果返回给node.js模块->应用
+`Application->V8->node.js BINDINGS（API） <-
+`process其实是EventEmitter的一个实例。观察者模式(addEventListener,removeEventListener)
+`EventEmitter实例可以抛任意的事件出来并且带着它想要的参数
+`观察者模式: 调用vs抛事件
+             抛事件:没有人接受事件，他还能继续下去。比如很多app同群发通知消息
+             调用:可靠性更高
+`Node.js模块做的事情基本上就是:负责node.js的应用层面到操作系统层面的通信。
+
+
+非阻塞I/O
+`非阻塞I/O是处理node.js并发的一个方法
+`从node.js的架构来看，可以分成Node.js线程和其它c++线程。node.js把大量的计算能力分到其它c++线程来计算，计算结果会回调给node.js线程
+`libuv就是用线程池来实现的
+`扩:glob可以把目录下所有的文件和文件名递归的获取到
+
+
+异步编程
+`node.js中的回调函数有格式规范:第一个参数是err,后面的参数才是回调函数执行的结果。
+`↑ ↑ ↑  Why? cause node.js中每一个事件循环都是一个全新的调用栈, 在函数内部 throw的错误 在外面 try catch是获取不到的。所以也得通过callback来实现
+
+Promise 
+`当前事件循环得不到的结果，但未来的事件循环会给到你结果,
+`扩:JavaScript shift方法=>删除并返回数组的第一个元素。
+`promise是一个状态机,reject和resolve之间状态不能相互转换
+`reject和resolve只能接受一个参数。
+`注意:任何一个rejected状态的后面如果没有.catch的promise，都会造成浏览器/node环境的全局错误
+        可能造成浏览器/node环境崩溃
+`可以解决很多异步流程控制问题。
+`then和catch会返回一个全新的promise,而这个promise的状态根据then的回调函数来决定
+`如果回调函数最终return了一个promise，该promise会和回调函数return的promise状态保持一致
+`这样可以在promise的链式调用里面串行的执行多个异步任务.(把回调地狱变成比较线性的代码)
+`并发控制的方法:Promise.all() 接受一个数组,可以把多个Promise放在这个数组里面
+`Promise.all()返回的还是一个Promise,所以可以在后面写.then。注意:promise.all里面都是resolve才会执行.all后面的.then方法
+
+
+async/await
+`async function 是Promise语法糖。
+`异步编程的终极方案-以同步的方式写异步。
+`await关键字可以‘暂停’async function的执行。
+`await关键字可以以同步的写法获取Promise的执行结果。
+`await会等待后面promise的状态变更
+`try-catch可以获取await所得到的结果。
+`通过 await Promise.all([]) 可以在async function中实现异步并行任务。
+
+
+网页服务器预览，快速写一个http服务来完成需求。
+const http = require('http');
+const fs = require('fs');
+
+http.createServer(function(req,res){
+  if(req.url == '/favicon.ico'){
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+  
+  res.writeHead(200);
+  fs.createReadStream(__dirname+'/index.html').pipe(res);
+  
+}).listen(2701);
+
+`url模块会帮我们把网页的url切分成几个模块.
+
+
+HTTP 处理框架之Express:  ->高性能思路 提供路由
+`了解一个框架最好的方法：了解它的关键功能，推导出它要解决的问题是什么.
+express路由。
+`express提供了中间件的功能 next()从一个回调函数跳到另一个回调函数里去执行
+`express洋葱模型对异步的支持不太好。
+
+
+HTTP 处理框架之Koa:  ->极简思路 不提供路由 内核精简 无添加
+`next函数可以中断中间件的执行。 
+`特点：中间件以及请求和返回的处理
+`koa实例与express不同之处：koa的实例需要通过new关键字来创建
+`通过中间件实现路由
+`通过mount实现路由
+    const koa = require('koa');
+    const app = new koa();
+    const mount = require('koa-mount');
+    
+    app.use('/',function(ctx){ //中间件
+        ctx.status = 200;
+        ctx.body = fs.readFileSync(__dirname +'/index.html','utf-8')
+    })
+    app.listen(3000)
+
+    `所有的中间件都需要通过koa的实例.use方法来挂载
+        比如这里 const gameKoa = new Koa();
+        koa.use(async function(ctx,next){},async function(ctx,next){})
+`koa核心功能一:提供比express更加极致的request/response简化
+    ·ctx.status = 200
+    ·ctx.body = 'hello world'
+`koa核心功能二:使用async function实现的中间件
+    ·有"暂停执行"的能力
+    ·在异步的情况下也符合洋葱模型,在执行下一个中间件的时候它能把前面的中间件暂停掉
+
+从原生http ->express重构->koa koa-mount重构 完整的node.js网页端应用项目。
+
+RPC
+`服务器和服务器之间的通信。RPC使用特有服务器进行寻址（与Ajax使用DNS寻址不同）
+`应用层协议一般不适用HTTP
+`基于TCP/UDP协议
+`通信方式：
+    ·单工通信: 自始至终只能由一端向另一端建立连接，
+    ·半双工通信:同一时间只能由一端向另一端建立连接,(轮番单工通信)
+    ·全双工：交叉、随意
+`二进制协议:（优于http协议，http协议是传输的是html或者json(key value)形式体积大）
+    ·更小的数据包体积
+    ·更快的编解码速度
+
+Node.js buffer模块:
+`buffer.from()方法:从一个现有的数据结构创建一个buffer
+`buffer.alloc()方法:根据指定的长度来创建buffer
+`由于使用原始的buffer对二进制包进行编解码时要了解每个字段的含义，相对于JSON要麻烦很多
+https://www.npmjs.com/package/protocol-buffers
+采用protocol-buffers来简便操作:  (为.proto后缀的文件)
+        ·var messages = protobuf(fs.readFileSync('test.proto'))
+        ·var buf = messages.Test.encode({
+            num: 42,
+            payload: 'hello world'
+        })    // 类似对JSON的编码操作， JSON.stringify
+        
+        ·var obj = messages.Test.decode(buf) //类似对Json的解码操作 JSON.parse
+
+    message Test {
+    required float num  = 1;
+    required string payload = 2;
+    }   //结构体，声明数据的格式
+
+
+Node.js net模块搭建多路服用的rpc通道
+`http用的是request和response。
+`net用的是socket, socket表示在一个通路写入和写出的代理对象。
+
+TCP粘包机制：Tcp会把同一时间发出的包拼接在一起。
+
+利用极客时间网站为例子，作出一个用node.js为中间层的网站。
+Node.js向前端提供http服务，向后进行RPC通信.
+
+实战篇:
+关注点在前后端交互的难度,列表页要用户尽快的看到课程
+看它需要有几次的前后端交互，是否需要二次刷新
+前端->BFF层->后端
+使用RPC通信从后台服务器获取数据
+
+`node模块{
+    koa,
+    koa-mount, //路由中间件
+    koa-static, //输出静态文件
+    nodemon, //可以实时更新修改
+    easy_sock, //nodejs通过rpc与后台通信的模块
+}
+
+`ES6模板字符串实现模板引擎,搭配vm.runInNewContext来实现EJS的效果。
+！！使用Es6实现模板引擎是所有模板殷勤中性能最高的
+VM -> 三个常用方法，用于创建独立运行的沙箱体制。
+VM -> 通过VM，JS可以被编译后立即执行或者编辑保存下来稍后执行。
+VM -> 可以通过上下文隔离化一个沙箱对象来提供上下文。
+vm来创建一个函数来执行模板字符串
+
+Node.js做Http常用api有两种:1.restful,2.GraphQL(专注数据聚合的API,来实现点赞操作)
+GraphQL能让前端自由查询它想要的数据,
+后端需要渲染列表：首屏加速、SEO
+前端也需要渲染列表：无刷新过滤、排序。
+涉及到前后端同构(一段代码可以在浏览器和服务器端同时使用)。-->在服务端做react渲染。
+babel转换器， nodejs端使用require的时候能转换代码 保障后续的Require都能兼容react语法
+
+next.js来解决react同构数据管理的难题。
+axios 它是一个使用promise的http的请求器，能同时兼容浏览器和服务器。
+同构的关键：注重职责的分离  ->1.处理数据,2.处理环境。
+
